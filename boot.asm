@@ -8,6 +8,7 @@ WIDTH  EQU 80
 start:
     call create_window
     call set_cursor_position
+    call print_msg
     cli
     hlt
 
@@ -17,6 +18,19 @@ set_cursor_position:
     mov dh, 0       ; Row
     mov dl, 0       ; Column
     int 0x10
+    ret
+
+print_msg:
+    mov si, msg
+.print_char:
+    lodsb
+    cmp al, 0
+    je .done
+    mov ah, 0Eh     ; BIOS function: Teletype Output
+    mov bh, 0       ; Page number
+    int 0x10
+    jmp .print_char
+.done:
     ret
 
 create_window:
@@ -51,6 +65,7 @@ create_window:
     mov dh, 0
     ret
 
+msg db 'Welcome to My kernel OS!',0
 times 510-($-$$) db 0
 dw 0xaa55
 
