@@ -1,11 +1,20 @@
-ORG 0x7c00
+ORG 0x0
 BITS 16
 
 HEIGHT EQU 25
 WIDTH  EQU 80
 
+jmp 0x7c0:start ;it sets our code segment to 0x7c0 and offset becomes start
 
 start:
+    cli
+    mov ax,0x7c0     
+    mov ds,ax    ;setting our data segment to 0x7c0 so DS:SI should work properly
+    mov es,ax
+    mov ax, 0x00
+    mov ss, ax   ;setting up stack segment to zero is still questionable 
+    mov sp, 0x7c00 ;stack pointer is correct because we have bios datat area below 0x7c00
+    sti
     call create_window
     call set_cursor_position
     call print_msg
@@ -16,7 +25,7 @@ set_cursor_position:
     mov ah, 02h     ; BIOS function: Set Cursor Position
     mov bh, 0       ; Page number
     mov dh, 0       ; Row
-    mov dl, 0       ; Column
+    mov dl, 1       ; Column
     int 0x10
     ret
 
