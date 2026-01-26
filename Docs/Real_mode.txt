@@ -81,7 +81,30 @@ Implement Our own interrupt
 handler_zero: this will replace the first entry
 
 --------------------------------------------------------------------------------------------------------------------------------
+Disk access and how it works
 
+1. filesystems are kernel Implemented they are not responsibility of the hard Disk
+
+2. Implemening a filesystem requires the kernel programmer to create a filesystem driver for target filesystem
+
+Data is read and written in sectors
+sector size is 512 bytes block 
+
+Reading a sector means disk will return 512 bytes of data for the chsoen sector 
+
+CHS is old way 
+LBA 
+specify the number LBA 0 returns a first sector
+
+How to calculate LBA 
+58376 bytes
+LBA = 58376/512 = 114
+offset = 58376 % 512 = 8
+
+In 16 bit real mode BIOS provides us 13h for disk operations 
+In 32 bit mode creates our very own disk driver which is little more complicated
+
+---------------------------------------------------------------------------------------------------------------------------------
 
 Real mode memory map
 Physical Address Range    Size      Description

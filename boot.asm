@@ -10,18 +10,6 @@ times 33 db 0 ;padding for BPB
 start:
     jmp 0x7c0:step2 ;it sets our code segment to 0x7c0 and offset becomes start
 
-handler_zero:
-    ;set the cursor position to row 1, column 0
-    mov ah, 02h     ; BIOS function: Set Cursor Position
-    mov bh, 0       ; Page number
-    mov dh, 1       ; Row
-    mov dl, 1      ; Column
-    int 0x10
-    ;print the exception message
-    mov si, zero_msg
-    call print_char
-    iret
-
 step2:
     cli
     mov ax,0x7c0     
@@ -34,19 +22,6 @@ step2:
     call create_window
     call set_cursor_position
     call print_msg
-    ; push ds
-    ; mov ax, 0x0000
-    ; mov ds, ax
-    ; mov word [ds:0], handler_zero
-    ; mov word [ds:2], cs
-    ; pop ds
-    push ds
-    mov ax, 0x0000
-    mov ds, ax
-    mov word [ds:0], handler_zero
-    mov word [ds:2], cs
-    pop ds 
-    int 0x00 ;trigger divide by zero exception for testing
     cli
     hlt
 
