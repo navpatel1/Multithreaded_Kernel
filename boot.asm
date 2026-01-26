@@ -20,16 +20,37 @@ step2:
     mov sp, 0x7c00 ;stack pointer is correct because we have bios datat area below 0x7c00
     sti
     call create_window
+    mov dh, 0       ; Row
+    mov dl, 1       ; Column
     call set_cursor_position
     call print_msg
+    ;Disk operation
+    mov ah, 02h
+    mov al, 1
+    mov ch, 0
+    mov cl, 2 ;CHS secor number starts from 1, 1st is our boot sector and 2nd is our message.txt
+    mov dh, 0
+    mov dl, 0x80        ; ADD THIS: Drive number (0x00 for floppy, 0x80 for HDD)
+    mov bx, buffer
+    int 0x13
+    jc disk_error
+    ;print the loaded message
+    mov dh, 1       ; Row
+    mov dl, 1       ; Column
+    call set_cursor_position
+    mov si, buffer
+    call print_char
     cli
     hlt
+
+disk_error:
+    mov si, err_msg
+    call print_char
+    jmp $
 
 set_cursor_position:
     mov ah, 02h     ; BIOS function: Set Cursor Position
     mov bh, 0       ; Page number
-    mov dh, 0       ; Row
-    mov dl, 1       ; Column
     int 0x10
     ret
 
@@ -81,11 +102,13 @@ create_window:
     mov dh, 0
     ret
 
+
 HEIGHT EQU 25
 WIDTH  EQU 80
 msg db 'Welcome to My kernel OS!',0
 zero_msg db 'Divide by Zero Exception Handler Invoked!',0
+err_msg db 'Failed to load a sector from disk!',0
 times 510-($-$$) db 0
 dw 0xaa55
 
-    
+buffer:

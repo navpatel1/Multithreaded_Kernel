@@ -1,0 +1,16 @@
+Protected mode
+
+protected mode is a processor state in x86 architectures which gives access to memory protection, 4GB address space and much more
+
+memory and hardware protection 
+
+Diffrent memory schemes
+1.selectors 
+2.paging 
+
+4Gb of addressable memory
+32 bit instructions and works with the 32 bit Registers
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Switch to preotected mode 
+

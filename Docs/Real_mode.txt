@@ -104,6 +104,16 @@ offset = 58376 % 512 = 8
 In 16 bit real mode BIOS provides us 13h for disk operations 
 In 32 bit mode creates our very own disk driver which is little more complicated
 
+int 0x13
+
+ah = 02h
+al = number of sectors to read 
+ch = low eight bits of cylinder number
+cl = sector number
+dh = head number
+dl = drive number (already set by BIOS while loading boot sector)
+ES:BX --> data buffer
+
 ---------------------------------------------------------------------------------------------------------------------------------
 
 Real mode memory map
