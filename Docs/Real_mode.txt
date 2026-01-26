@@ -45,6 +45,43 @@ _start:
 times 33 db 0 ;padding for BPB block dummy data avaialable
 
 ---------------------------------------------------------------------------------------------------------------------------------
+Interrupt Vector Table
+
+Interrupts are like subroutines 
+interrupt is called using numbers rather than addresses
+
+IVT present in first 1KB of in memory 
+
+steps of interrupt 
+1. processor is interrupted
+2. old state saved on the stack 
+3. interrupt is Executed 
+4. old state is restored
+
+we have 256 interrupts and each interrupt entry is 4 bytes
+256 * 4 = 1024 bytes = 1KB 
+
+interrupts are in numerical order 
+
+interrupt 1    | interrupt 2   |
+offset segment |offset segment |
+0x00    0x7c0    0x8d00  0x00
+2bytes  2bytes 
+
+interrupt 0 = address 0x0
+interrupt 1 = address 0x04
+
+int 0x13
+
+0x13 * 4 --> address of entry in IVT 
+then takes out offset and segment and runs actual address
+
+Implement Our own interrupt
+
+handler_zero: this will replace the first entry
+
+--------------------------------------------------------------------------------------------------------------------------------
+
 
 Real mode memory map
 Physical Address Range    Size      Description

@@ -4,11 +4,23 @@ BITS 16
 _start:
     jmp short start
     nop
-    
+
 times 33 db 0 ;padding for BPB
 
 start:
     jmp 0x7c0:step2 ;it sets our code segment to 0x7c0 and offset becomes start
+
+handler_zero:
+    ;set the cursor position to row 1, column 0
+    mov ah, 02h     ; BIOS function: Set Cursor Position
+    mov bh, 0       ; Page number
+    mov dh, 1       ; Row
+    mov dl, 1      ; Column
+    int 0x10
+    ;print the exception message
+    mov si, zero_msg
+    call print_char
+    iret
 
 step2:
     cli
@@ -22,6 +34,19 @@ step2:
     call create_window
     call set_cursor_position
     call print_msg
+    ; push ds
+    ; mov ax, 0x0000
+    ; mov ds, ax
+    ; mov word [ds:0], handler_zero
+    ; mov word [ds:2], cs
+    ; pop ds
+    push ds
+    mov ax, 0x0000
+    mov ds, ax
+    mov word [ds:0], handler_zero
+    mov word [ds:2], cs
+    pop ds 
+    int 0x00 ;trigger divide by zero exception for testing
     cli
     hlt
 
@@ -35,15 +60,18 @@ set_cursor_position:
 
 print_msg:
     mov si, msg
-.print_char:
+    call print_char
+    ret
+
+print_char:
     lodsb
     cmp al, 0
-    je .done
+    je done
     mov ah, 0Eh     ; BIOS function: Teletype Output
     mov bh, 0       ; Page number
     int 0x10
-    jmp .print_char
-.done:
+    jmp print_char
+done:
     ret
 
 create_window:
@@ -81,6 +109,7 @@ create_window:
 HEIGHT EQU 25
 WIDTH  EQU 80
 msg db 'Welcome to My kernel OS!',0
+zero_msg db 'Divide by Zero Exception Handler Invoked!',0
 times 510-($-$$) db 0
 dw 0xaa55
 
