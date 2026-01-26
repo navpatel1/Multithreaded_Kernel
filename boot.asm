@@ -1,12 +1,16 @@
 ORG 0x0
 BITS 16
 
-HEIGHT EQU 25
-WIDTH  EQU 80
-
-jmp 0x7c0:start ;it sets our code segment to 0x7c0 and offset becomes start
+_start:
+    jmp short start
+    nop
+    
+times 33 db 0 ;padding for BPB
 
 start:
+    jmp 0x7c0:step2 ;it sets our code segment to 0x7c0 and offset becomes start
+
+step2:
     cli
     mov ax,0x7c0     
     mov ds,ax    ;setting our data segment to 0x7c0 so DS:SI should work properly
@@ -74,6 +78,8 @@ create_window:
     mov dh, 0
     ret
 
+HEIGHT EQU 25
+WIDTH  EQU 80
 msg db 'Welcome to My kernel OS!',0
 times 510-($-$$) db 0
 dw 0xaa55

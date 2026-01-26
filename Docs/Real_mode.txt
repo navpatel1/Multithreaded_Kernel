@@ -27,9 +27,24 @@ SS segment is at 0
 and stack operations are done using [SS:SP]
 and stack grows downwards by decrementing stack pointer
 
+--------------------------------------------------------------------------------------------------------------------------------
+
+BIOS parameter block 
+is a data structure which present at the top of boot sector and tells the BOOTLOADER which file system we are using and 
+it should be loacated at 11 bytes from start of boot sector
+
+if BPB is not present it can replace our code with BPB block and cannot be booted in most of devices
+
+to make sure BPB is present we will replace this with Dummy data 
 
 
+_start:
+    jmp short start  3 bytes for this 
+    nop
+    
+times 33 db 0 ;padding for BPB block dummy data avaialable
 
+---------------------------------------------------------------------------------------------------------------------------------
 
 Real mode memory map
 Physical Address Range    Size      Description
