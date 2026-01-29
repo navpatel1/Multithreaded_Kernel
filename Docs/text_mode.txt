@@ -1,0 +1,22 @@
+1. Text mode allows you to write ASCII to video memory
+2. Text mode supports 16 unique colors
+3. No need to set individual screen pixels for printing characters
+
+
+Text mode allows you to write ascii to video memory 
+1. memory starting at address 0xB8000 for coloured display
+2. or for Monochrome display address 0xB0000
+
+Each characters takes up two bytes 
+
+byte 0 = ascii character e.g 'A'
+byte 1 = Colour mode
+
+0xb8000 = 'A'
+0xb8001 = 0x00
+
+0xb8002 = 'B'
+0xb8003 = 0x00
+
+=========================================================================================================
+
