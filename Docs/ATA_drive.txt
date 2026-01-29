@@ -1,0 +1,94 @@
+ATA PIO (Programmed Input/Output) mode is one of the data transfer methods used by ATA/IDE drives. 
+In PIO mode,the CPU directly controls all data transfers between the drive and system memory, without using DMA (Direct Memory Access).
+
+CPU-Intensive Process
+
+Transfer Speeds:
+  - PIO Mode 0: 3.3 MB/s
+  - PIO Mode 1: 5.2 MB/s
+  - PIO Mode 2: 8.3 MB/s
+  - PIO Mode 3: 11.1 MB/s
+  - PIO Mode 4: 16.7 MB/s
+
+The ATA stands for Advanced technology attachment / SATA -> serial ATA
+
+Controller Chip
+  ├── Primary ATA Bus (Bus 0)
+  │   ├── Master Drive (0)
+  │   └── Slave Drive (1)
+  └── Secondary ATA Bus (Bus 1)
+      ├── Master Drive (2)
+      └── Slave Drive (3)
+
+
+
+; Read 100 sectors from LBA 1
+  read_sectors:
+      ; Wait for BSY clear
+  .wait_ready:
+      mov dx, 0x1F7
+      in al, dx
+      test al, 0x80
+      jnz .wait_ready
+
+      ; Drive/Head: LBA mode, master, LBA[27:24]=0
+      mov dx, 0x1F6
+      mov al, 0xE0        ; 11100000b - LBA mode, master, upper bits = 0
+      out dx, al
+
+      ; Sector count = 100
+      mov dx, 0x1F2
+      mov al, 100
+      out dx, al
+
+      ; LBA bits 0-7 = 1
+      mov dx, 0x1F3
+      mov al, 0x01
+      out dx, al
+
+      ; LBA bits 8-15 = 0
+      mov dx, 0x1F4
+      mov al, 0x00
+      out dx, al
+
+      ; LBA bits 16-23 = 0
+      mov dx, 0x1F5
+      mov al, 0x00
+      out dx, al
+
+      ; Send READ SECTORS command
+      mov dx, 0x1F7
+      mov al, 0x20
+      out dx, al
+
+      ; Read 100 sectors
+      mov cx, 100
+  .sector_loop:
+      ; Wait for DRQ
+  .wait_drq:
+      mov dx, 0x1F7
+      in al, dx
+      test al, 0x08
+      jz .wait_drq
+
+      ; Read 256 words (512 bytes)
+      mov dx, 0x1F0
+      mov bx, 256
+  .word_loop:
+      in ax, dx
+      mov [edi], ax
+      add edi, 2
+      dec bx
+      jnz .word_loop
+
+      ; 400ns delay
+      mov dx, 0x1F7
+      in al, dx
+      in al, dx
+      in al, dx
+      in al, dx
+
+      loop .sector_loop
+      ret
+
+

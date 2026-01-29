@@ -14,3 +14,183 @@ Diffrent memory schemes
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Switch to preotected mode 
 
+Entering Protected Mode
+
+Before switching to protected mode, you must:
+
+1.Disable interrupts, including NMI (as suggested by Intel Developers Manual).
+2.Enable the A20 Line.
+3.Load the Global Descriptor Table with segment descriptors suitable for code, data, and stack.
+
+Whether the CPU is in Real Mode or in Protected Mode is defined by the lowest bit of the CR0 or MSW register.
+
+This example loads a descriptor table into the processor's GDTR register, and then sets the lowest bit of CR0:
+
+cli            ; disable interrupts
+lgdt [gdtr]    ; load GDT register with start address of Global Descriptor Table
+mov eax, cr0 
+or al, 1       ; set PE (Protection Enable) bit in CR0 (Control Register 0)
+mov cr0, eax
+
+; Perform far jump to selector 08h (offset into GDT, pointing at a 32bit PM code segment descriptor) 
+; to load CS with proper PM32 descriptor)
+jmp 08h:PModeMain
+
+PModeMain:
+; load DS, ES, FS, GS, SS, ESP
+
+1.Disable interrupts --> cli
+2.Fast A20 Gate(enabling A20 line)
+3.Load the gdt register
+
+
+ss, ds, es, fs, cs -> will store the index of gdt descriptor will tells us about the bas address
+
+mov word[ss:0x045] ---> ss = 0x1 --> first gdt entry take base + 0x45
+
+load the gdt using lgdt[gdt descriptor] command and gdt descriptor contains size and offset of gdt table 
+
+size is gdt size - 1
+---------------------------------------------------------------------------------------------------------------------------------------------------
+2.Fast a20 gate 
+in al, 0x92
+or al, 2
+out 0x92, al
+
+--------------------------------------------------------------------------------------------------------------------------------------------------
+enable PE bit using cr register
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+https://wiki.osdev.org/ATA_PIO_Mode
+REFER to ATA link so what we want to do is :
+we want our kernel to load at 1M using disk operations using ATA PIO mode 
+and our bootable drive is right now ---> (boot.bin >> kernel.bin ) --> which creates os.bin 
+boot.bin contains boot sector / MBR which is loaded by BIOS at address 0x7c00 and kernel.bin is loaded by boot sector at 1M 
+so it is important that our first text section should be kernel.asm and should be compiled properly
+
+
+now lets look at our linker file 
+which puts kernel.asm.o linked first and it should be text section 
+so whatever code is compiled by gcc is aligned and rest of assembly files should be in .asm section 
+but we want kernel.asm.o in text section and it should be loaded at 1M so make this kernel.asm of 512 bytes using (times .......)
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+====================================================================================================================================================================
+COMPREHENSIVE PROTECTED MODE MEMORY MAP
+====================================================================================================================================================================
+
+1. REAL MODE MEMORY MAP (for reference)
+------------------------------------------
+0x00000000 - 0x000003FF   Interrupt Vector Table (IVT) - 1024 bytes
+0x00000400 - 0x000004FF   BIOS Data Area (BDA) - 256 bytes
+0x00000500 - 0x00007BFF   Conventional Memory (available) - ~29KB
+0x00007C00 - 0x00007DFF   Boot Sector Load Area - 512 bytes
+0x00007E00 - 0x0007FFFF   Conventional Memory (available) - ~480KB
+0x00080000 - 0x0009FFFF   Extended BIOS Data Area (EBDA) - 128KB
+0x000A0000 - 0x000BFFFF   Video Memory (VGA) - 128KB
+0x000C0000 - 0x000FFFFF   BIOS ROM Area - 256KB
+
+2. PROTECTED MODE 32-BIT MEMORY MAP
+-----------------------------------
+Linear Address Range     | Physical Address    | Description
+--------------------------|--------------------|---------------------------------
+0x00000000 - 0x000003FF  | 0x00000000-0x3FF   | Interrupt Vector Table (legacy)
+0x00000400 - 0x000004FF  | 0x00000400-0x4FF   | BIOS Data Area
+0x00000500 - 0x00007BFF  | 0x00000500-0x7BFF  | Low Memory (available)
+0x00007C00 - 0x00007DFF  | 0x00007C00-0x7DFF  | Boot Sector
+0x00007E00 - 0x0009FFFF  | 0x00007E00-0x9FFFF | Conventional Memory
+0x000A0000 - 0x000BFFFF  | 0x000A0000-0xBFFFF | Video RAM (VGA)
+0x000C0000 - 0x000C7FFF  | 0x000C0000-0xC7FFF | Video BIOS ROM
+0x000C8000 - 0x000EFFFF  | 0x000C8000-0xEFFFF | BIOS Extensions
+0x000F0000 - 0x000FFFFF  | 0x000F0000-0xFFFFF | System BIOS ROM
+0x00100000 - 0xFFFFFFFF  | 0x00100000+        | Extended Memory (4GB-1MB)
+
+3. DETAILED MEMORY REGIONS (Protected Mode)
+-------------------------------------------
+
+A. LOW MEMORY (0x00000000 - 0x000FFFFF) - 1MB
+   └── 0x00000000 - 0x000003FF  IVT (Real mode legacy)
+   └── 0x00000400 - 0x000004FF  BDA (BIOS Data Area)
+       • COM/LPT port addresses
+       • Equipment list
+       • Memory size
+       • Keyboard buffer
+   └── 0x00000500 - 0x00009FFF  Available Low Memory (~38KB)
+       • Stack space for real mode
+       • Temporary buffers
+       • Boot loader code
+   └── 0x0000A000 - 0x0000BFFF  Video Memory (128KB)
+       • 0xA0000-0xA7FFF: EGA/VGA graphics
+       • 0xB0000-0xB7FFF: Monochrome text
+       • 0xB8000-0xBFFFF: Color text mode
+   └── 0x0000C000 - 0x0000FFFF  ROM Area (256KB)
+       • Video BIOS, System BIOS
+       • Option ROMs
+
+B. EXTENDED MEMORY (0x00100000 - 0xFFFFFFFF) - ~4GB
+   └── 0x00100000 - 0x00FFFFFF  Low Extended Memory (15MB)
+       • Kernel loading area
+       • Initial ramdisk
+       • Page tables
+   └── 0x01000000 - 0xFFEFFFFF  High Memory (~4GB-17MB)
+       • Application memory
+       • Kernel heap
+       • Memory mapped devices
+   └── 0xFFF00000 - 0xFFFFFFFF  High ROM Area (1MB)
+       • System firmware
+       • ACPI tables
+
+4. STANDARD KERNEL MEMORY LAYOUT
+---------------------------------
+0x00100000 (1MB)    - Kernel Load Address
+0x00200000 (2MB)    - Page Tables Start
+0x00400000 (4MB)    - Kernel Heap Start
+0x00800000 (8MB)    - User Space Start
+0xC0000000 (3GB)    - Kernel Virtual Memory
+0xFFC00000          - Temporary Mappings
+0xFFE00000          - APIC/Local APIC
+0xFFF00000          - BIOS/Firmware
+
+5. MEMORY-MAPPED I/O REGIONS
+----------------------------
+0x000A0000 - 0x000BFFFF   VGA Frame Buffer
+0x000E0000 - 0x000FFFFF   System BIOS
+0xFEC00000 - 0xFECFFFFF   I/O APIC
+0xFED00000 - 0xFED003FF   HPET
+0xFEE00000 - 0xFEEFFFFF   Local APIC
+0xFF000000 - 0xFFFFFFFF   Flash/ROM
+
+6. QEMU-SPECIFIC CONSIDERATIONS
+-------------------------------
+• QEMU provides 128MB+ RAM by default
+• E820 memory map available via BIOS call
+• PCI configuration space at 0xCF8/0xCFC
+• ACPI tables in extended memory
+• Memory above 4GB (if configured) starts at 0x100000000
+
+7. PROTECTED MODE SEGMENT USAGE
+-------------------------------
+Selector | Base      | Limit     | Type | DPL | Purpose
+---------|-----------|-----------|------|-----|----------
+0x08     | 0x00000000| 0xFFFFF   | Code | 0   | Kernel Code
+0x10     | 0x00000000| 0xFFFFF   | Data | 0   | Kernel Data
+0x18     | 0x00000000| 0xFFFFF   | Code | 3   | User Code
+0x20     | 0x00000000| 0xFFFFF   | Data | 3   | User Data
+
+8. PAGE TABLE ORGANIZATION (if paging enabled)
+----------------------------------------------
+• Page Directory: 1024 entries × 4 bytes = 4KB
+• Page Tables: 1024 entries × 4 bytes each = 4KB each
+• Each PDE covers 4MB of virtual address space
+• Each PTE covers 4KB page
+• CR3 points to Page Directory base
+
+9. MEMORY ACCESS PERMISSIONS
+----------------------------
+• Ring 0 (Kernel): Access to all memory
+• Ring 1-2: Limited use in modern systems
+• Ring 3 (User): Restricted access via paging
+• Memory protection via segment limits/paging
+
+====================================================================================================================================================================
