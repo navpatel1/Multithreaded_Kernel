@@ -1,0 +1,1692 @@
+# IDT (Interrupt Descriptor Table) Implementation Plan - 10 Days
+# x86 Architecture - Linux-style Implementation
+
+===============================================================================
+                        COMPREHENSIVE IDT IMPLEMENTATION ROADMAP
+===============================================================================
+
+## Overview
+This document provides a 10-day implementation plan for building a complete
+Interrupt Descriptor Table (IDT) system from scratch, following Linux kernel
+architecture principles. Each day includes specific tasks with unit testing
+requirements.
+
+## Prerequisites
+- x86 assembly language knowledge
+- C programming proficiency
+- Understanding of x86 protected mode
+- Basic knowledge of CPU architecture
+
+===============================================================================
+                                    DAY 1
+                        FOUNDATION & IDT STRUCTURE SETUP
+===============================================================================
+
+### Objectives:
+- Understand IDT structure and x86 interrupt mechanism
+- Set up basic IDT framework
+- Create foundational data structures
+
+### Tasks:
+
+#### Task 1.1: IDT Structure Definition (2 hours)
+**Deliverable:** `idt.h` - IDT descriptor structures
+```c
+// Define IDT gate descriptor structure
+typedef struct {
+    uint16_t offset_low;    // Offset bits 0-15
+    uint16_t selector;      // Code segment selector
+    uint8_t  zero;          // Always zero
+    uint8_t  type_attr;     // Type and attributes
+    uint16_t offset_high;   // Offset bits 16-31
+} __attribute__((packed)) idt_gate_t;
+
+// IDT register structure
+typedef struct {
+    uint16_t limit;         // Size of IDT - 1
+    uint32_t base;          // Base address of IDT
+} __attribute__((packed)) idt_register_t;
+```
+
+**Unit Tests:**
+- Test structure sizes (sizeof(idt_gate_t) == 8)
+- Test alignment and packing
+- Verify bit field layouts
+
+#### Task 1.2: IDT Table Initialization (3 hours)
+**Deliverable:** `idt_init.c` - Basic IDT setup functions
+```c
+#define IDT_ENTRIES 256
+static idt_gate_t idt[IDT_ENTRIES];
+static idt_register_t idt_reg;
+
+void idt_set_gate(int num, uint32_t handler, uint16_t sel, uint8_t flags);
+void idt_install(void);
+```
+
+**Unit Tests:**
+- Test IDT gate setting with valid parameters
+- Test invalid gate numbers (boundary testing)
+- Verify IDT register setup
+
+#### Task 1.3: Assembly Interface (2 hours)
+**Deliverable:** `idt_asm.s` - Assembly routines for IDT loading
+```assembly
+.global idt_load
+idt_load:
+    lidt [esp + 4]
+    ret
+```
+
+**Unit Tests:**
+- Mock LIDT instruction execution
+- Test register parameter passing
+- Verify assembly linkage
+
+#### Task 1.4: Basic Constants and Definitions (1 hour)
+**Deliverable:** `interrupt_constants.h`
+```c
+// IDT Gate Types
+#define IDT_TYPE_TASK       0x05
+#define IDT_TYPE_INTERRUPT  0x0E
+#define IDT_TYPE_TRAP       0x0F
+
+// Privilege Levels
+#define IDT_FLAG_KERNEL     0x00
+#define IDT_FLAG_USER       0x60
+
+// Present Flag
+#define IDT_FLAG_PRESENT    0x80
+```
+
+**Unit Tests:**
+- Verify constant values match x86 specification
+- Test flag combinations
+
+### Day 1 Deliverables:
+- [ ] idt.h - IDT structures
+- [ ] idt_init.c - initialization functions
+- [ ] idt_asm.s - assembly interface
+- [ ] interrupt_constants.h - definitions
+- [ ] Unit test suite for Day 1 components
+
+===============================================================================
+                                    DAY 2
+                          IDT INITIALIZATION & BASIC GATES
+===============================================================================
+
+### Objectives:
+- Implement complete IDT initialization
+- Set up basic interrupt gates
+- Create interrupt stub framework
+
+### Tasks:
+
+#### Task 2.1: Interrupt Stub Generator (3 hours)
+**Deliverable:** `interrupt_stubs.s` - Assembly interrupt stubs
+```assembly
+; Macro for interrupts with error codes
+%macro ISR_ERRORCODE 1
+global isr%1
+isr%1:
+    cli
+    push dword %1       ; Push interrupt number
+    jmp isr_common_stub
+%endmacro
+
+; Macro for interrupts without error codes
+%macro ISR_NOERORCODE 1
+global isr%1
+isr%1:
+    cli
+    push dword 0        ; Dummy error code
+    push dword %1       ; Push interrupt number
+    jmp isr_common_stub
+%endmacro
+```
+
+**Unit Tests:**
+- Test stub generation for all 256 interrupts
+- Verify stack layout after stub execution
+- Test error code handling
+
+#### Task 2.2: Common Interrupt Handler (4 hours)
+**Deliverable:** `interrupt_handler.c` - C interrupt handler framework
+```c
+typedef struct {
+    uint32_t gs, fs, es, ds;
+    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
+    uint32_t int_no, err_code;
+    uint32_t eip, cs, eflags, useresp, ss;
+} registers_t;
+
+void interrupt_handler(registers_t *regs);
+extern void isr_common_stub(void);
+```
+
+**Unit Tests:**
+- Test register preservation
+- Verify interrupt number extraction
+- Test error code handling
+- Mock interrupt dispatch
+
+#### Task 2.3: IDT Population Function (2 hours)
+**Deliverable:** Enhanced `idt_init.c`
+```c
+void populate_idt(void) {
+    // Set up exception handlers (0-31)
+    for (int i = 0; i < 32; i++) {
+        idt_set_gate(i, (uint32_t)isr_handlers[i],
+                     0x08, IDT_FLAG_PRESENT | IDT_TYPE_INTERRUPT);
+    }
+}
+```
+
+**Unit Tests:**
+- Test IDT population for all entries
+- Verify correct handler addresses
+- Test selector and flag settings
+
+#### Task 2.4: Basic IDT Installation (1 hour)
+**Deliverable:** Complete IDT installation routine
+```c
+void install_idt(void) {
+    idt_reg.limit = (sizeof(idt_gate_t) * IDT_ENTRIES) - 1;
+    idt_reg.base = (uint32_t)&idt;
+
+    populate_idt();
+    idt_load((uint32_t)&idt_reg);
+}
+```
+
+**Unit Tests:**
+- Test complete IDT installation
+- Verify IDT register values
+- Test IDT loading simulation
+
+### Day 2 Deliverables:
+- [ ] interrupt_stubs.s - 256 interrupt stubs
+- [ ] interrupt_handler.c - common handler framework
+- [ ] Enhanced idt_init.c with population
+- [ ] Complete IDT installation routine
+- [ ] Unit test suite for Day 2 components
+
+===============================================================================
+                                    DAY 3
+                        EXCEPTION HANDLERS IMPLEMENTATION
+===============================================================================
+
+### Objectives:
+- Implement specific exception handlers
+- Handle CPU exceptions (divide by zero, page fault, etc.)
+- Create exception debugging framework
+
+### Tasks:
+
+#### Task 3.1: Division by Zero Handler (2 hours)
+**Deliverable:** `exception_handlers.c` - Division exception
+```c
+void handle_divide_error(registers_t *regs) {
+    print_exception("Division by Zero", regs);
+    // Handle divide by zero - either kill process or handle gracefully
+    halt_system();
+}
+```
+
+**Unit Tests:**
+- Simulate division by zero condition
+- Test register state preservation
+- Verify error reporting
+
+#### Task 3.2: Page Fault Handler (4 hours)
+**Deliverable:** Page fault handling system
+```c
+void handle_page_fault(registers_t *regs) {
+    uint32_t fault_addr = read_cr2();
+    uint32_t error_code = regs->err_code;
+
+    if (error_code & 0x1) {
+        // Page protection violation
+    } else {
+        // Page not present
+    }
+
+    // Handle page fault logic
+}
+```
+
+**Unit Tests:**
+- Mock CR2 register reading
+- Test different page fault scenarios
+- Verify error code interpretation
+- Test page fault recovery
+
+#### Task 3.3: General Protection Fault (2 hours)
+**Deliverable:** GPF handler
+```c
+void handle_general_protection_fault(registers_t *regs) {
+    print_exception("General Protection Fault", regs);
+    // Analyze error code to determine cause
+    analyze_gpf_error(regs->err_code);
+}
+```
+
+**Unit Tests:**
+- Test GPF detection
+- Verify error code analysis
+- Test recovery mechanisms
+
+#### Task 3.4: Exception Debugging Framework (2 hours)
+**Deliverable:** `exception_debug.c`
+```c
+void print_exception(const char *exception_name, registers_t *regs) {
+    printf("Exception: %s\n", exception_name);
+    printf("EIP: 0x%x, Error Code: 0x%x\n", regs->eip, regs->err_code);
+    print_stack_trace(regs);
+}
+
+void print_stack_trace(registers_t *regs);
+void dump_registers(registers_t *regs);
+```
+
+**Unit Tests:**
+- Test exception message formatting
+- Verify register dump output
+- Test stack trace generation
+
+### Day 3 Deliverables:
+- [ ] exception_handlers.c - specific exception handlers
+- [ ] exception_debug.c - debugging framework
+- [ ] Stack trace implementation
+- [ ] Exception recovery mechanisms
+- [ ] Unit test suite for Day 3 components
+
+===============================================================================
+                                    DAY 4
+                        HARDWARE INTERRUPT HANDLING & PIC
+===============================================================================
+
+### Objectives:
+- Set up Programmable Interrupt Controller (PIC)
+- Implement hardware interrupt handling
+- Create IRQ management system
+
+### Tasks:
+
+#### Task 4.1: PIC (8259) Configuration (3 hours)
+**Deliverable:** `pic.c` - PIC initialization and control
+```c
+#define PIC1_COMMAND    0x20
+#define PIC1_DATA       0x21
+#define PIC2_COMMAND    0xA0
+#define PIC2_DATA       0xA1
+
+void pic_init(void) {
+    // Send initialization command words (ICW)
+    outb(PIC1_COMMAND, 0x11);  // ICW1: Initialize
+    outb(PIC2_COMMAND, 0x11);
+
+    outb(PIC1_DATA, 0x20);     // ICW2: IRQ base (32)
+    outb(PIC2_DATA, 0x28);     // ICW2: IRQ base (40)
+
+    outb(PIC1_DATA, 0x04);     // ICW3: Cascade
+    outb(PIC2_DATA, 0x02);
+
+    outb(PIC1_DATA, 0x01);     // ICW4: 8086 mode
+    outb(PIC2_DATA, 0x01);
+}
+```
+
+**Unit Tests:**
+- Mock I/O port operations
+- Test PIC initialization sequence
+- Verify interrupt masking
+- Test EOI (End of Interrupt) handling
+
+#### Task 4.2: IRQ Handler Framework (3 hours)
+**Deliverable:** `irq_handlers.c` - IRQ management
+```c
+typedef void (*irq_handler_t)(registers_t *regs);
+static irq_handler_t irq_handlers[16] = {0};
+
+void register_irq_handler(int irq, irq_handler_t handler) {
+    if (irq >= 0 && irq < 16) {
+        irq_handlers[irq] = handler;
+    }
+}
+
+void irq_handler(registers_t *regs) {
+    int irq = regs->int_no - 32;
+
+    if (irq_handlers[irq]) {
+        irq_handlers[irq](regs);
+    }
+
+    // Send EOI
+    if (irq >= 8) {
+        outb(PIC2_COMMAND, 0x20);
+    }
+    outb(PIC1_COMMAND, 0x20);
+}
+```
+
+**Unit Tests:**
+- Test IRQ handler registration
+- Verify handler dispatch
+- Test EOI sequence
+- Mock hardware interrupt scenarios
+
+#### Task 4.3: Timer Interrupt (IRQ0) (2 hours)
+**Deliverable:** Timer interrupt handler
+```c
+static uint32_t timer_ticks = 0;
+
+void timer_callback(registers_t *regs) {
+    timer_ticks++;
+
+    // Schedule next task (basic round-robin)
+    schedule_next_task();
+}
+
+void init_timer(uint32_t frequency) {
+    register_irq_handler(0, timer_callback);
+
+    // Configure PIT (Programmable Interval Timer)
+    uint32_t divisor = 1193180 / frequency;
+    outb(0x43, 0x36);
+    outb(0x40, divisor & 0xFF);
+    outb(0x40, (divisor >> 8) & 0xFF);
+}
+```
+
+**Unit Tests:**
+- Test timer frequency calculation
+- Verify tick counting
+- Mock PIT configuration
+- Test scheduling integration
+
+#### Task 4.4: Keyboard Interrupt (IRQ1) (2 hours)
+**Deliverable:** Basic keyboard handler
+```c
+void keyboard_callback(registers_t *regs) {
+    uint8_t scancode = inb(0x60);
+
+    if (scancode & 0x80) {
+        // Key release
+        handle_key_release(scancode & 0x7F);
+    } else {
+        // Key press
+        handle_key_press(scancode);
+    }
+}
+
+void init_keyboard(void) {
+    register_irq_handler(1, keyboard_callback);
+}
+```
+
+**Unit Tests:**
+- Mock keyboard port reads
+- Test scancode processing
+- Verify key press/release detection
+- Test keyboard buffer management
+
+### Day 4 Deliverables:
+- [ ] pic.c - PIC configuration and control
+- [ ] irq_handlers.c - IRQ management framework
+- [ ] Timer interrupt implementation
+- [ ] Keyboard interrupt implementation
+- [ ] Unit test suite for Day 4 components
+
+===============================================================================
+                                    DAY 5
+                           SYSTEM CALL INTERFACE
+===============================================================================
+
+### Objectives:
+- Implement system call mechanism
+- Create user-kernel transition
+- Set up system call dispatch table
+
+### Tasks:
+
+#### Task 5.1: System Call Gate Setup (2 hours)
+**Deliverable:** System call interrupt gate (INT 0x80)
+```c
+#define SYSCALL_INTERRUPT 0x80
+
+void setup_syscall_gate(void) {
+    idt_set_gate(SYSCALL_INTERRUPT,
+                 (uint32_t)syscall_stub,
+                 0x08,
+                 IDT_FLAG_PRESENT | IDT_TYPE_TRAP | IDT_FLAG_USER);
+}
+```
+
+**Unit Tests:**
+- Test system call gate setup
+- Verify user-mode accessibility
+- Test privilege level transition
+
+#### Task 5.2: System Call Stub (3 hours)
+**Deliverable:** `syscall_stub.s` - System call entry point
+```assembly
+global syscall_stub
+syscall_stub:
+    cli
+    push ds
+    push es
+    push fs
+    push gs
+    pusha
+
+    mov ax, 0x10    ; Kernel data segment
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    push esp        ; Pass register struct
+    call syscall_dispatcher
+    add esp, 4
+
+    popa
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    sti
+    iret
+```
+
+**Unit Tests:**
+- Test register preservation
+- Verify segment setup
+- Test stack manipulation
+- Mock IRET behavior
+
+#### Task 5.3: System Call Dispatcher (3 hours)
+**Deliverable:** `syscall.c` - System call dispatch
+```c
+#define MAX_SYSCALLS 256
+
+typedef int (*syscall_func_t)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+static syscall_func_t syscall_table[MAX_SYSCALLS] = {0};
+
+int syscall_dispatcher(registers_t *regs) {
+    uint32_t syscall_num = regs->eax;
+
+    if (syscall_num >= MAX_SYSCALLS || !syscall_table[syscall_num]) {
+        return -1;  // Invalid system call
+    }
+
+    return syscall_table[syscall_num](regs->ebx, regs->ecx,
+                                      regs->edx, regs->esi, regs->edi);
+}
+
+void register_syscall(uint32_t num, syscall_func_t func) {
+    if (num < MAX_SYSCALLS) {
+        syscall_table[num] = func;
+    }
+}
+```
+
+**Unit Tests:**
+- Test system call registration
+- Verify parameter passing
+- Test invalid system call handling
+- Mock system call execution
+
+#### Task 5.4: Basic System Calls (2 hours)
+**Deliverable:** Essential system calls
+```c
+// System call numbers
+#define SYS_EXIT    1
+#define SYS_WRITE   4
+#define SYS_READ    3
+
+int sys_exit(uint32_t status) {
+    // Terminate current process
+    terminate_process(current_process, status);
+    return 0;
+}
+
+int sys_write(uint32_t fd, uint32_t buffer, uint32_t count) {
+    // Write to file descriptor
+    return write_file(fd, (void*)buffer, count);
+}
+
+int sys_read(uint32_t fd, uint32_t buffer, uint32_t count) {
+    // Read from file descriptor
+    return read_file(fd, (void*)buffer, count);
+}
+
+void init_syscalls(void) {
+    register_syscall(SYS_EXIT, sys_exit);
+    register_syscall(SYS_WRITE, sys_write);
+    register_syscall(SYS_READ, sys_read);
+}
+```
+
+**Unit Tests:**
+- Test each system call individually
+- Verify parameter validation
+- Test return value handling
+- Mock file operations
+
+### Day 5 Deliverables:
+- [ ] System call gate setup
+- [ ] syscall_stub.s - assembly entry point
+- [ ] syscall.c - dispatch mechanism
+- [ ] Basic system call implementations
+- [ ] Unit test suite for Day 5 components
+
+===============================================================================
+                                    DAY 6
+                        ADVANCED EXCEPTION HANDLING
+===============================================================================
+
+### Objectives:
+- Implement remaining CPU exceptions
+- Create exception recovery mechanisms
+- Add exception logging and debugging
+
+### Tasks:
+
+#### Task 6.1: Floating Point Exceptions (2 hours)
+**Deliverable:** FPU exception handlers
+```c
+void handle_fpu_error(registers_t *regs) {
+    uint16_t fpu_status = get_fpu_status();
+
+    if (fpu_status & FPU_INVALID_OP) {
+        handle_invalid_fpu_operation(regs);
+    }
+    if (fpu_status & FPU_DIVIDE_BY_ZERO) {
+        handle_fpu_divide_by_zero(regs);
+    }
+    if (fpu_status & FPU_OVERFLOW) {
+        handle_fpu_overflow(regs);
+    }
+
+    clear_fpu_exceptions();
+}
+```
+
+**Unit Tests:**
+- Mock FPU status register
+- Test different FPU exception types
+- Verify exception clearing
+- Test FPU state restoration
+
+#### Task 6.2: Double Fault Handler (2 hours)
+**Deliverable:** Double fault detection and handling
+```c
+void handle_double_fault(registers_t *regs) {
+    // Double fault is non-recoverable in most cases
+    print_critical_error("DOUBLE FAULT DETECTED");
+
+    // Log system state
+    log_system_state(regs);
+
+    // Attempt emergency shutdown
+    emergency_shutdown();
+}
+```
+
+**Unit Tests:**
+- Test double fault detection
+- Verify emergency procedures
+- Test logging mechanisms
+- Mock system shutdown
+
+#### Task 6.3: Stack Segment Fault (2 hours)
+**Deliverable:** Stack fault handler
+```c
+void handle_stack_fault(registers_t *regs) {
+    uint32_t fault_addr = regs->esp;
+
+    // Check if stack overflow
+    if (fault_addr < get_stack_bottom()) {
+        handle_stack_overflow(regs);
+    } else {
+        handle_stack_underflow(regs);
+    }
+}
+```
+
+**Unit Tests:**
+- Test stack boundary detection
+- Verify overflow/underflow handling
+- Mock stack allocation
+- Test stack recovery
+
+#### Task 6.4: Exception Recovery Framework (4 hours)
+**Deliverable:** `exception_recovery.c`
+```c
+typedef enum {
+    RECOVERY_TERMINATE,
+    RECOVERY_RESTART,
+    RECOVERY_IGNORE,
+    RECOVERY_CUSTOM
+} recovery_action_t;
+
+typedef struct {
+    int exception_num;
+    recovery_action_t action;
+    void (*custom_handler)(registers_t *regs);
+} exception_policy_t;
+
+static exception_policy_t exception_policies[32];
+
+void set_exception_policy(int exception, recovery_action_t action) {
+    if (exception >= 0 && exception < 32) {
+        exception_policies[exception].exception_num = exception;
+        exception_policies[exception].action = action;
+    }
+}
+
+recovery_action_t handle_exception_recovery(int exception, registers_t *regs) {
+    exception_policy_t *policy = &exception_policies[exception];
+
+    switch (policy->action) {
+        case RECOVERY_TERMINATE:
+            terminate_current_process();
+            break;
+        case RECOVERY_RESTART:
+            restart_current_process();
+            break;
+        case RECOVERY_CUSTOM:
+            if (policy->custom_handler) {
+                policy->custom_handler(regs);
+            }
+            break;
+        default:
+            break;
+    }
+
+    return policy->action;
+}
+```
+
+**Unit Tests:**
+- Test exception policy setup
+- Verify recovery action execution
+- Mock process termination/restart
+- Test custom handler execution
+
+### Day 6 Deliverables:
+- [ ] FPU exception handlers
+- [ ] Double fault handler
+- [ ] Stack fault handler
+- [ ] exception_recovery.c - recovery framework
+- [ ] Unit test suite for Day 6 components
+
+===============================================================================
+                                    DAY 7
+                        INTERRUPT PRIORITIES & MASKING
+===============================================================================
+
+### Objectives:
+- Implement interrupt priority system
+- Create interrupt masking mechanisms
+- Add nested interrupt support
+
+### Tasks:
+
+#### Task 7.1: Priority-Based Interrupt Controller (3 hours)
+**Deliverable:** `priority_controller.c`
+```c
+#define MAX_PRIORITY_LEVELS 8
+
+typedef struct {
+    int irq;
+    int priority;
+    bool enabled;
+    uint32_t count;
+} irq_info_t;
+
+static irq_info_t irq_table[16];
+static int current_priority = 0;
+
+void set_irq_priority(int irq, int priority) {
+    if (irq >= 0 && irq < 16 && priority >= 0 && priority < MAX_PRIORITY_LEVELS) {
+        irq_table[irq].irq = irq;
+        irq_table[irq].priority = priority;
+        update_pic_mask();
+    }
+}
+
+void update_pic_mask(void) {
+    uint16_t mask = 0;
+
+    for (int i = 0; i < 16; i++) {
+        if (!irq_table[i].enabled || irq_table[i].priority <= current_priority) {
+            mask |= (1 << i);
+        }
+    }
+
+    outb(PIC1_DATA, mask & 0xFF);
+    outb(PIC2_DATA, (mask >> 8) & 0xFF);
+}
+```
+
+**Unit Tests:**
+- Test priority assignment
+- Verify mask calculation
+- Mock PIC mask updates
+- Test priority enforcement
+
+#### Task 7.2: Nested Interrupt Support (3 hours)
+**Deliverable:** Nested interrupt handling
+```c
+#define MAX_NEST_LEVEL 8
+
+static int interrupt_nest_level = 0;
+static int interrupt_stack[MAX_NEST_LEVEL];
+
+void enter_interrupt(int irq) {
+    if (interrupt_nest_level < MAX_NEST_LEVEL) {
+        interrupt_stack[interrupt_nest_level] = current_priority;
+        interrupt_nest_level++;
+
+        current_priority = irq_table[irq].priority;
+        update_pic_mask();
+    }
+}
+
+void exit_interrupt(int irq) {
+    if (interrupt_nest_level > 0) {
+        interrupt_nest_level--;
+        current_priority = interrupt_stack[interrupt_nest_level];
+        update_pic_mask();
+    }
+}
+```
+
+**Unit Tests:**
+- Test nested interrupt entry/exit
+- Verify stack management
+- Test maximum nesting limits
+- Mock interrupt scenarios
+
+#### Task 7.3: Critical Section Protection (2 hours)
+**Deliverable:** Critical section framework
+```c
+static volatile int critical_section_count = 0;
+static volatile bool interrupts_were_enabled = false;
+
+void enter_critical_section(void) {
+    bool enabled = are_interrupts_enabled();
+
+    disable_interrupts();
+
+    if (critical_section_count == 0) {
+        interrupts_were_enabled = enabled;
+    }
+    critical_section_count++;
+}
+
+void exit_critical_section(void) {
+    if (critical_section_count > 0) {
+        critical_section_count--;
+
+        if (critical_section_count == 0 && interrupts_were_enabled) {
+            enable_interrupts();
+        }
+    }
+}
+```
+
+**Unit Tests:**
+- Test critical section nesting
+- Verify interrupt state preservation
+- Test re-entrancy safety
+- Mock interrupt enable/disable
+
+#### Task 7.4: Interrupt Statistics and Monitoring (2 hours)
+**Deliverable:** `interrupt_stats.c`
+```c
+typedef struct {
+    uint32_t count;
+    uint32_t total_time;
+    uint32_t max_time;
+    uint32_t min_time;
+} interrupt_stats_t;
+
+static interrupt_stats_t irq_stats[16];
+static interrupt_stats_t exception_stats[32];
+
+void record_interrupt_start(int irq) {
+    irq_stats[irq].start_time = get_timestamp();
+}
+
+void record_interrupt_end(int irq) {
+    uint32_t end_time = get_timestamp();
+    uint32_t duration = end_time - irq_stats[irq].start_time;
+
+    irq_stats[irq].count++;
+    irq_stats[irq].total_time += duration;
+
+    if (duration > irq_stats[irq].max_time) {
+        irq_stats[irq].max_time = duration;
+    }
+
+    if (duration < irq_stats[irq].min_time || irq_stats[irq].min_time == 0) {
+        irq_stats[irq].min_time = duration;
+    }
+}
+
+void print_interrupt_stats(void) {
+    printf("IRQ Statistics:\n");
+    for (int i = 0; i < 16; i++) {
+        if (irq_stats[i].count > 0) {
+            printf("IRQ %d: Count=%u, Avg=%u, Max=%u, Min=%u\n",
+                   i, irq_stats[i].count,
+                   irq_stats[i].total_time / irq_stats[i].count,
+                   irq_stats[i].max_time, irq_stats[i].min_time);
+        }
+    }
+}
+```
+
+**Unit Tests:**
+- Test statistics collection
+- Verify timing calculations
+- Mock timestamp functions
+- Test statistics reporting
+
+### Day 7 Deliverables:
+- [ ] priority_controller.c - priority system
+- [ ] Nested interrupt support
+- [ ] Critical section framework
+- [ ] interrupt_stats.c - monitoring system
+- [ ] Unit test suite for Day 7 components
+
+===============================================================================
+                                    DAY 8
+                        PERFORMANCE OPTIMIZATION & CACHING
+===============================================================================
+
+### Objectives:
+- Optimize interrupt handling performance
+- Implement interrupt handler caching
+- Add fast interrupt paths
+
+### Tasks:
+
+#### Task 8.1: Fast Interrupt Path (4 hours)
+**Deliverable:** Optimized interrupt entry/exit
+```c
+// Fast path for common interrupts (timer, keyboard)
+#define FAST_IRQ_TIMER    0
+#define FAST_IRQ_KEYBOARD 1
+
+// Assembly optimized fast handlers
+extern void fast_timer_handler(void);
+extern void fast_keyboard_handler(void);
+
+void setup_fast_interrupts(void) {
+    // Set up dedicated handlers for high-frequency interrupts
+    idt_set_gate(32 + FAST_IRQ_TIMER, (uint32_t)fast_timer_handler,
+                 0x08, IDT_FLAG_PRESENT | IDT_TYPE_INTERRUPT);
+
+    idt_set_gate(32 + FAST_IRQ_KEYBOARD, (uint32_t)fast_keyboard_handler,
+                 0x08, IDT_FLAG_PRESENT | IDT_TYPE_INTERRUPT);
+}
+```
+
+**Deliverable:** `fast_handlers.s` - Optimized assembly handlers
+```assembly
+; Fast timer handler - minimal overhead
+global fast_timer_handler
+fast_timer_handler:
+    push eax
+    push edx
+
+    ; Increment timer tick counter
+    inc dword [timer_ticks]
+
+    ; Send EOI
+    mov al, 0x20
+    out 0x20, al
+
+    pop edx
+    pop eax
+    iret
+
+; Fast keyboard handler
+global fast_keyboard_handler
+fast_keyboard_handler:
+    push eax
+
+    ; Read scancode
+    in al, 0x60
+    mov [last_scancode], al
+
+    ; Send EOI
+    mov al, 0x20
+    out 0x20, al
+
+    pop eax
+    iret
+```
+
+**Unit Tests:**
+- Benchmark fast vs normal handlers
+- Test register preservation
+- Verify EOI handling
+- Mock hardware interactions
+
+#### Task 8.2: Interrupt Handler Caching (3 hours)
+**Deliverable:** Handler caching system
+```c
+#define CACHE_SIZE 16
+
+typedef struct {
+    int irq;
+    irq_handler_t handler;
+    uint32_t access_count;
+    uint32_t last_access;
+} handler_cache_entry_t;
+
+static handler_cache_entry_t handler_cache[CACHE_SIZE];
+static int cache_next_index = 0;
+
+irq_handler_t get_cached_handler(int irq) {
+    // Check cache first
+    for (int i = 0; i < CACHE_SIZE; i++) {
+        if (handler_cache[i].irq == irq) {
+            handler_cache[i].access_count++;
+            handler_cache[i].last_access = get_timestamp();
+            return handler_cache[i].handler;
+        }
+    }
+
+    // Cache miss - load handler
+    irq_handler_t handler = irq_handlers[irq];
+    cache_handler(irq, handler);
+    return handler;
+}
+
+void cache_handler(int irq, irq_handler_t handler) {
+    int index = cache_next_index;
+    handler_cache[index].irq = irq;
+    handler_cache[index].handler = handler;
+    handler_cache[index].access_count = 1;
+    handler_cache[index].last_access = get_timestamp();
+
+    cache_next_index = (cache_next_index + 1) % CACHE_SIZE;
+}
+```
+
+**Unit Tests:**
+- Test cache hit/miss scenarios
+- Verify LRU replacement
+- Benchmark cache performance
+- Test cache consistency
+
+#### Task 8.3: Batch Interrupt Processing (2 hours)
+**Deliverable:** Interrupt batching system
+```c
+#define BATCH_SIZE 32
+
+typedef struct {
+    int irq;
+    registers_t regs;
+} pending_interrupt_t;
+
+static pending_interrupt_t interrupt_batch[BATCH_SIZE];
+static int batch_count = 0;
+static bool batch_mode = false;
+
+void enable_batch_mode(void) {
+    batch_mode = true;
+    batch_count = 0;
+}
+
+void add_to_batch(int irq, registers_t *regs) {
+    if (batch_count < BATCH_SIZE) {
+        interrupt_batch[batch_count].irq = irq;
+        interrupt_batch[batch_count].regs = *regs;
+        batch_count++;
+    }
+}
+
+void process_batch(void) {
+    for (int i = 0; i < batch_count; i++) {
+        int irq = interrupt_batch[i].irq;
+        irq_handler_t handler = get_cached_handler(irq);
+
+        if (handler) {
+            handler(&interrupt_batch[i].regs);
+        }
+    }
+
+    batch_count = 0;
+}
+```
+
+**Unit Tests:**
+- Test batch collection
+- Verify batch processing
+- Test batch overflow handling
+- Benchmark batch vs individual processing
+
+#### Task 8.4: Memory Pool for Interrupt Context (1 hour)
+**Deliverable:** Interrupt memory management
+```c
+#define INTERRUPT_POOL_SIZE 1024
+
+static uint8_t interrupt_memory_pool[INTERRUPT_POOL_SIZE];
+static uint32_t pool_offset = 0;
+
+void* alloc_interrupt_memory(size_t size) {
+    if (pool_offset + size <= INTERRUPT_POOL_SIZE) {
+        void* ptr = &interrupt_memory_pool[pool_offset];
+        pool_offset += size;
+        return ptr;
+    }
+    return NULL;  // Pool exhausted
+}
+
+void reset_interrupt_pool(void) {
+    pool_offset = 0;
+}
+```
+
+**Unit Tests:**
+- Test memory allocation
+- Verify pool boundaries
+- Test pool reset
+- Mock allocation scenarios
+
+### Day 8 Deliverables:
+- [ ] Fast interrupt path implementation
+- [ ] fast_handlers.s - optimized assembly
+- [ ] Handler caching system
+- [ ] Batch processing framework
+- [ ] Interrupt memory pool
+- [ ] Performance benchmarking suite
+- [ ] Unit test suite for Day 8 components
+
+===============================================================================
+                                    DAY 9
+                        ERROR HANDLING & RECOVERY
+===============================================================================
+
+### Objectives:
+- Implement comprehensive error handling
+- Create system recovery mechanisms
+- Add fault tolerance features
+
+### Tasks:
+
+#### Task 9.1: Error Classification System (2 hours)
+**Deliverable:** `error_classification.c`
+```c
+typedef enum {
+    ERROR_RECOVERABLE,
+    ERROR_CRITICAL,
+    ERROR_FATAL,
+    ERROR_HARDWARE,
+    ERROR_SOFTWARE
+} error_severity_t;
+
+typedef enum {
+    ERROR_MEMORY,
+    ERROR_HARDWARE_FAULT,
+    ERROR_PROTECTION_VIOLATION,
+    ERROR_RESOURCE_EXHAUSTION,
+    ERROR_TIMEOUT,
+    ERROR_INVALID_OPERATION
+} error_category_t;
+
+typedef struct {
+    error_severity_t severity;
+    error_category_t category;
+    int error_code;
+    const char* description;
+    uint32_t timestamp;
+    uint32_t eip;
+    int process_id;
+} error_record_t;
+
+#define MAX_ERROR_RECORDS 256
+static error_record_t error_log[MAX_ERROR_RECORDS];
+static int error_log_index = 0;
+
+void log_error(error_severity_t severity, error_category_t category,
+               int code, const char* desc, registers_t* regs) {
+    error_record_t* record = &error_log[error_log_index];
+
+    record->severity = severity;
+    record->category = category;
+    record->error_code = code;
+    record->description = desc;
+    record->timestamp = get_timestamp();
+    record->eip = regs ? regs->eip : 0;
+    record->process_id = get_current_process_id();
+
+    error_log_index = (error_log_index + 1) % MAX_ERROR_RECORDS;
+}
+```
+
+**Unit Tests:**
+- Test error logging
+- Verify log rotation
+- Test error classification
+- Mock timestamp and process ID
+
+#### Task 9.2: Automatic Recovery System (3 hours)
+**Deliverable:** `auto_recovery.c`
+```c
+typedef enum {
+    RECOVERY_NONE,
+    RECOVERY_RETRY,
+    RECOVERY_RESTART_SERVICE,
+    RECOVERY_RESTART_SYSTEM,
+    RECOVERY_SAFE_MODE
+} recovery_strategy_t;
+
+typedef struct {
+    error_category_t error_type;
+    recovery_strategy_t strategy;
+    int max_retries;
+    uint32_t retry_delay;
+    bool (*recovery_func)(error_record_t* error);
+} recovery_policy_t;
+
+static recovery_policy_t recovery_policies[] = {
+    {ERROR_MEMORY, RECOVERY_RETRY, 3, 1000, recover_memory_error},
+    {ERROR_HARDWARE_FAULT, RECOVERY_RESTART_SERVICE, 1, 5000, recover_hardware_fault},
+    {ERROR_TIMEOUT, RECOVERY_RETRY, 5, 500, recover_timeout_error}
+};
+
+bool attempt_recovery(error_record_t* error) {
+    for (int i = 0; i < sizeof(recovery_policies)/sizeof(recovery_policy_t); i++) {
+        if (recovery_policies[i].error_type == error->category) {
+            recovery_policy_t* policy = &recovery_policies[i];
+
+            for (int retry = 0; retry < policy->max_retries; retry++) {
+                if (policy->recovery_func && policy->recovery_func(error)) {
+                    log_recovery_success(error, retry + 1);
+                    return true;
+                }
+
+                delay_ms(policy->retry_delay);
+            }
+        }
+    }
+
+    return false;
+}
+
+bool recover_memory_error(error_record_t* error) {
+    // Attempt to free memory, compact heap, etc.
+    return cleanup_memory() && verify_memory_integrity();
+}
+
+bool recover_hardware_fault(error_record_t* error) {
+    // Reset hardware, reinitialize drivers
+    return reset_hardware_subsystem(error->error_code);
+}
+```
+
+**Unit Tests:**
+- Test recovery policy matching
+- Mock recovery functions
+- Test retry mechanisms
+- Verify recovery logging
+
+#### Task 9.3: System Health Monitoring (3 hours)
+**Deliverable:** `health_monitor.c`
+```c
+typedef struct {
+    uint32_t interrupt_count[32];
+    uint32_t exception_count[32];
+    uint32_t last_health_check;
+    uint32_t memory_usage;
+    uint32_t cpu_usage;
+    bool system_stable;
+} system_health_t;
+
+static system_health_t health_metrics;
+
+void update_health_metrics(void) {
+    health_metrics.last_health_check = get_timestamp();
+    health_metrics.memory_usage = get_memory_usage_percent();
+    health_metrics.cpu_usage = get_cpu_usage_percent();
+
+    // Check system stability
+    health_metrics.system_stable = check_system_stability();
+}
+
+bool check_system_stability(void) {
+    // Check for excessive exceptions
+    uint32_t total_exceptions = 0;
+    for (int i = 0; i < 32; i++) {
+        total_exceptions += health_metrics.exception_count[i];
+    }
+
+    if (total_exceptions > EXCEPTION_THRESHOLD) {
+        return false;
+    }
+
+    // Check resource usage
+    if (health_metrics.memory_usage > MEMORY_THRESHOLD ||
+        health_metrics.cpu_usage > CPU_THRESHOLD) {
+        return false;
+    }
+
+    return true;
+}
+
+void trigger_health_action(void) {
+    if (!health_metrics.system_stable) {
+        log_error(ERROR_CRITICAL, ERROR_RESOURCE_EXHAUSTION,
+                  0, "System instability detected", NULL);
+
+        // Take corrective action
+        cleanup_resources();
+        reduce_system_load();
+    }
+}
+```
+
+**Unit Tests:**
+- Test health metric collection
+- Mock resource usage functions
+- Test stability thresholds
+- Verify corrective actions
+
+#### Task 9.4: Graceful Degradation (2 hours)
+**Deliverable:** Service degradation framework
+```c
+typedef enum {
+    SERVICE_LEVEL_FULL,
+    SERVICE_LEVEL_REDUCED,
+    SERVICE_LEVEL_MINIMAL,
+    SERVICE_LEVEL_EMERGENCY
+} service_level_t;
+
+static service_level_t current_service_level = SERVICE_LEVEL_FULL;
+
+void degrade_service_level(service_level_t new_level) {
+    if (new_level < current_service_level) {
+        current_service_level = new_level;
+
+        switch (new_level) {
+            case SERVICE_LEVEL_REDUCED:
+                disable_non_essential_interrupts();
+                reduce_timer_frequency();
+                break;
+            case SERVICE_LEVEL_MINIMAL:
+                disable_all_but_critical_interrupts();
+                enter_power_save_mode();
+                break;
+            case SERVICE_LEVEL_EMERGENCY:
+                disable_all_interrupts_except_nmi();
+                prepare_emergency_shutdown();
+                break;
+        }
+
+        log_service_degradation(new_level);
+    }
+}
+```
+
+**Unit Tests:**
+- Test service level transitions
+- Verify interrupt disabling
+- Mock power management
+- Test emergency procedures
+
+### Day 9 Deliverables:
+- [ ] error_classification.c - error logging system
+- [ ] auto_recovery.c - automatic recovery
+- [ ] health_monitor.c - system monitoring
+- [ ] Graceful degradation framework
+- [ ] Unit test suite for Day 9 components
+
+===============================================================================
+                                   DAY 10
+                        INTEGRATION TESTING & DOCUMENTATION
+===============================================================================
+
+### Objectives:
+- Complete system integration testing
+- Performance benchmarking
+- Documentation and code review
+- Final validation and deployment preparation
+
+### Tasks:
+
+#### Task 10.1: Comprehensive Integration Tests (3 hours)
+**Deliverable:** `integration_test_suite.c`
+```c
+typedef struct {
+    const char* test_name;
+    bool (*test_func)(void);
+    bool passed;
+    uint32_t execution_time;
+} integration_test_t;
+
+bool test_complete_idt_initialization(void) {
+    install_idt();
+
+    // Verify IDT is properly loaded
+    idt_register_t current_idt;
+    get_current_idt(&current_idt);
+
+    return (current_idt.base == (uint32_t)&idt) &&
+           (current_idt.limit == (sizeof(idt_gate_t) * IDT_ENTRIES) - 1);
+}
+
+bool test_exception_handling_flow(void) {
+    // Test divide by zero exception
+    bool exception_caught = false;
+    set_test_exception_handler(0, mark_exception_caught);
+
+    // This would normally crash, but should be caught
+    trigger_divide_by_zero();
+
+    return exception_caught;
+}
+
+bool test_hardware_interrupt_flow(void) {
+    // Test timer interrupt
+    uint32_t initial_ticks = get_timer_ticks();
+    delay_ms(100);
+    uint32_t final_ticks = get_timer_ticks();
+
+    return (final_ticks > initial_ticks);
+}
+
+bool test_system_call_mechanism(void) {
+    // Test system call execution
+    int result = syscall(SYS_WRITE, 1, "test", 4);
+    return (result == 4);
+}
+
+bool test_interrupt_priorities(void) {
+    // Set up priority test scenario
+    set_irq_priority(0, 5);  // Timer - high priority
+    set_irq_priority(1, 1);  // Keyboard - low priority
+
+    // Simulate concurrent interrupts
+    return verify_priority_handling();
+}
+
+static integration_test_t integration_tests[] = {
+    {"IDT Initialization", test_complete_idt_initialization, false, 0},
+    {"Exception Handling", test_exception_handling_flow, false, 0},
+    {"Hardware Interrupts", test_hardware_interrupt_flow, false, 0},
+    {"System Calls", test_system_call_mechanism, false, 0},
+    {"Interrupt Priorities", test_interrupt_priorities, false, 0}
+};
+
+void run_integration_tests(void) {
+    printf("Running IDT Integration Test Suite...\n");
+
+    int passed = 0;
+    int total = sizeof(integration_tests) / sizeof(integration_test_t);
+
+    for (int i = 0; i < total; i++) {
+        printf("Running: %s... ", integration_tests[i].test_name);
+
+        uint32_t start_time = get_timestamp();
+        integration_tests[i].passed = integration_tests[i].test_func();
+        integration_tests[i].execution_time = get_timestamp() - start_time;
+
+        if (integration_tests[i].passed) {
+            printf("PASSED (%ums)\n", integration_tests[i].execution_time);
+            passed++;
+        } else {
+            printf("FAILED\n");
+        }
+    }
+
+    printf("\nResults: %d/%d tests passed\n", passed, total);
+}
+```
+
+**Unit Tests:**
+- Test individual integration test functions
+- Verify test harness functionality
+- Mock hardware interactions for testing
+- Test error reporting
+
+#### Task 10.2: Performance Benchmarking (3 hours)
+**Deliverable:** `performance_benchmark.c`
+```c
+typedef struct {
+    const char* benchmark_name;
+    uint32_t iterations;
+    uint32_t total_time;
+    uint32_t min_time;
+    uint32_t max_time;
+    uint32_t avg_time;
+} benchmark_result_t;
+
+benchmark_result_t benchmark_interrupt_latency(void) {
+    const int iterations = 1000;
+    benchmark_result_t result = {"Interrupt Latency", iterations, 0, UINT32_MAX, 0, 0};
+
+    for (int i = 0; i < iterations; i++) {
+        uint32_t start = get_high_precision_timestamp();
+        trigger_test_interrupt();
+        uint32_t end = get_interrupt_completion_timestamp();
+
+        uint32_t duration = end - start;
+        result.total_time += duration;
+
+        if (duration < result.min_time) result.min_time = duration;
+        if (duration > result.max_time) result.max_time = duration;
+    }
+
+    result.avg_time = result.total_time / iterations;
+    return result;
+}
+
+benchmark_result_t benchmark_system_call_overhead(void) {
+    const int iterations = 10000;
+    benchmark_result_t result = {"System Call Overhead", iterations, 0, UINT32_MAX, 0, 0};
+
+    for (int i = 0; i < iterations; i++) {
+        uint32_t start = get_high_precision_timestamp();
+        syscall(SYS_NULL);  // Null system call for timing
+        uint32_t end = get_high_precision_timestamp();
+
+        uint32_t duration = end - start;
+        result.total_time += duration;
+
+        if (duration < result.min_time) result.min_time = duration;
+        if (duration > result.max_time) result.max_time = duration;
+    }
+
+    result.avg_time = result.total_time / iterations;
+    return result;
+}
+
+benchmark_result_t benchmark_exception_handling(void) {
+    const int iterations = 100;
+    benchmark_result_t result = {"Exception Handling", iterations, 0, UINT32_MAX, 0, 0};
+
+    for (int i = 0; i < iterations; i++) {
+        uint32_t start = get_high_precision_timestamp();
+        trigger_recoverable_exception();
+        uint32_t end = get_high_precision_timestamp();
+
+        uint32_t duration = end - start;
+        result.total_time += duration;
+
+        if (duration < result.min_time) result.min_time = duration;
+        if (duration > result.max_time) result.max_time = duration;
+    }
+
+    result.avg_time = result.total_time / iterations;
+    return result;
+}
+
+void run_performance_benchmarks(void) {
+    printf("IDT Performance Benchmarks\n");
+    printf("==========================\n");
+
+    benchmark_result_t results[] = {
+        benchmark_interrupt_latency(),
+        benchmark_system_call_overhead(),
+        benchmark_exception_handling()
+    };
+
+    for (int i = 0; i < 3; i++) {
+        printf("%s:\n", results[i].benchmark_name);
+        printf("  Iterations: %u\n", results[i].iterations);
+        printf("  Average: %u cycles\n", results[i].avg_time);
+        printf("  Min: %u cycles\n", results[i].min_time);
+        printf("  Max: %u cycles\n", results[i].max_time);
+        printf("\n");
+    }
+}
+```
+
+#### Task 10.3: Final Code Review and Cleanup (2 hours)
+**Deliverable:** Code review checklist and cleanup
+```c
+// Code review checklist implementation
+bool verify_code_quality(void) {
+    bool all_passed = true;
+
+    // Check for memory leaks
+    if (!verify_no_memory_leaks()) {
+        printf("ERROR: Memory leaks detected\n");
+        all_passed = false;
+    }
+
+    // Verify all interrupts have handlers
+    if (!verify_all_interrupts_handled()) {
+        printf("ERROR: Unhandled interrupts found\n");
+        all_passed = false;
+    }
+
+    // Check critical section safety
+    if (!verify_critical_section_safety()) {
+        printf("ERROR: Critical section violations\n");
+        all_passed = false;
+    }
+
+    // Verify error handling coverage
+    if (!verify_error_handling_coverage()) {
+        printf("ERROR: Incomplete error handling\n");
+        all_passed = false;
+    }
+
+    return all_passed;
+}
+```
+
+#### Task 10.4: Documentation Generation (2 hours)
+**Deliverable:** Complete API documentation
+```c
+/**
+ * @file idt_complete.h
+ * @brief Complete IDT Implementation API
+ * @version 1.0
+ * @date Day 10
+ *
+ * This header provides the complete API for the IDT implementation
+ * following Linux kernel architecture principles.
+ */
+
+/**
+ * @brief Initialize the complete IDT system
+ * @return 0 on success, negative on error
+ */
+int idt_system_init(void);
+
+/**
+ * @brief Register an interrupt handler
+ * @param irq Interrupt request number (0-15)
+ * @param handler Function pointer to handler
+ * @param priority Priority level (0-7, higher is more priority)
+ * @return 0 on success, negative on error
+ */
+int register_interrupt_handler(int irq, irq_handler_t handler, int priority);
+
+/**
+ * @brief Register an exception handler
+ * @param exception Exception number (0-31)
+ * @param handler Function pointer to handler
+ * @param recovery_policy Recovery strategy for this exception
+ * @return 0 on success, negative on error
+ */
+int register_exception_handler(int exception, exception_handler_t handler,
+                              recovery_action_t recovery_policy);
+
+// ... complete API documentation ...
+```
+
+### Day 10 Deliverables:
+- [ ] integration_test_suite.c - comprehensive tests
+- [ ] performance_benchmark.c - performance analysis
+- [ ] Code quality verification
+- [ ] Complete API documentation
+- [ ] Deployment guide
+- [ ] Final validation report
+
+===============================================================================
+                                 FINAL NOTES
+===============================================================================
+
+## Unit Testing Framework Requirements
+
+Each component must include:
+1. **Mock Functions**: Hardware interaction mocking
+2. **Boundary Testing**: Edge cases and limits
+3. **Error Injection**: Fault tolerance verification
+4. **Performance Metrics**: Timing and resource usage
+5. **Integration Points**: Interface verification
+
+## Build System Integration
+```makefile
+# Example Makefile structure
+SOURCES := $(wildcard day*/src/*.c)
+TESTS := $(wildcard day*/tests/*.c)
+OBJECTS := $(SOURCES:.c=.o)
+TEST_OBJECTS := $(TESTS:.c=.o)
+
+all: idt_system run_tests
+
+idt_system: $(OBJECTS)
+    $(CC) $(LDFLAGS) -o $@ $^
+
+run_tests: $(TEST_OBJECTS)
+    $(CC) $(LDFLAGS) -o $@ $^ -lcriterion
+    ./run_tests
+```
+
+## Success Criteria
+
+By Day 10, the implementation must:
+- [ ] Handle all x86 exceptions (0-31)
+- [ ] Support all hardware interrupts (IRQ 0-15)
+- [ ] Provide system call interface (INT 0x80)
+- [ ] Include priority-based interrupt handling
+- [ ] Support nested interrupts safely
+- [ ] Implement comprehensive error recovery
+- [ ] Pass all integration tests
+- [ ] Meet performance benchmarks
+- [ ] Include complete documentation
+
+## Linux Compatibility Notes
+
+This implementation follows Linux kernel patterns:
+- Similar IDT structure and management
+- Compatible exception numbering
+- Linux-style system call interface
+- Comparable performance characteristics
+- Similar error handling strategies
+
+===============================================================================
+                                END OF DOCUMENT
+===============================================================================
