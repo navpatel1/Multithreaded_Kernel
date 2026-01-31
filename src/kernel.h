@@ -9,4 +9,6 @@ void terminal_initialize();
 
 void kernel_main();
 
+void print(const char* str);
+
 #endif

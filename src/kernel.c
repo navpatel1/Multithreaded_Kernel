@@ -1,4 +1,5 @@
 #include "kernel.h"
+#include "idt/idt.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -60,12 +61,15 @@ void print(const char* str){
     }
 }
 
+extern void problem(void);
 
 
 void kernel_main(){
 
     terminal_initialize();
     print("Hello, Kernel World!\nAdded new line support.\nC17 standard in use.\n");
-    while(1);  
+    idt_init();
+    problem();
+    while(1);   
 
 }
