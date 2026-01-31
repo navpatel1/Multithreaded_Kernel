@@ -38,8 +38,7 @@ clean:
 	rm -rf ./build/kernel.o
 	rm -rf ./build/kernel.asm.o
 	rm -rf ./build/kernelfull.o
-	rm -rf ./build/memory/*.o
-	rm -rf ./build/idt/*.o
+	rm -rf ${FILES}
 
 
 

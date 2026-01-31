@@ -61,7 +61,7 @@ void print(const char* str){
     }
 }
 
-extern void problem();
+extern void problem(void);
 
 void kernel_main(){
 
